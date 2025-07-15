@@ -1,8 +1,5 @@
 streamlit
-pandas
 numpy
-matplotlib
+pandas
 plotly
-geopandas
-shapely
 scikit-learn
