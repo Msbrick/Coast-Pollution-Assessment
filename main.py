@@ -1,77 +1,55 @@
-# main.py
+# streamlit_app.py
+
+import streamlit as st
 import pandas as pd
-import numpy as np
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.preprocessing import StandardScaler
+from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score, classification_report
-import plotly.express as px
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-import warnings
+from sklearn.metrics import mean_squared_error
 
-warnings.filterwarnings("ignore")
+st.title("해양 오염도 예측 프로그램")
 
-class ShorePollutionPredictor:
-    def __init__(self):
-        self.model = RandomForestClassifier(n_estimators=100, random_state=42)
-        self.scaler = StandardScaler()
-        self.feature_columns = None
-        self.feature_importance = None
-        self.is_trained = False
-        self.data = None
+# 데이터 불러오기
+@st.cache_data
+def load_data():
+    df = pd.read_csv("coast/Shore_Pollution.csv")
+    return df
 
-    def load_data(self, filepath_or_buffer):
-        self.data = pd.read_csv(filepath_or_buffer)
-        return self.data
+df = load_data()
+st.subheader("원본 데이터 미리보기")
+st.write(df.head())
 
-    def preprocess_data(self):
-        required = ['Pollution Level']
-        for col in required:
-            if col not in self.data.columns:
-                raise ValueError(f"Missing required column: {col}")
-        potential_features = [
-            'Month', 'Season', 'Shore',
-            'Mean Number of Nematode species 1 per gram soil',
-            'Mean Number of Turbillaria per gram soil',
-            'Water pH', 'Soil pH', 'Water Salinity', 'Soil Salinity',
-            'Total dissolved solids', 'Conduction', 'ORP'
-        ]
-        self.feature_columns = [f for f in potential_features if f in self.data.columns]
-        X = self.data[self.feature_columns].copy()
-        y = self.data['Pollution Level']
-        for col in X.columns:
-            X[col] = X[col].fillna(X[col].median() if X[col].dtype != 'object' else X[col].mode()[0])
-        return X, y
+# 입력 및 타깃 변수 설정
+st.subheader("모델 학습 및 예측")
+if 'Pollution' not in df.columns:
+    st.error("❌ 'Pollution'이라는 컬럼이 존재해야 예측 가능합니다.")
+else:
+    X = df.drop(columns=["Pollution"])
+    y = df["Pollution"]
 
-    def train_model(self, test_size=0.2):
-        X, y = self.preprocess_data()
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, stratify=y)
-        X_train = self.scaler.fit_transform(X_train)
-        X_test = self.scaler.transform(X_test)
-        self.model.fit(X_train, y_train)
-        y_pred = self.model.predict(X_test)
-        self.feature_importance = pd.DataFrame({
-            'feature': self.feature_columns,
-            'importance': self.model.feature_importances_
-        }).sort_values('importance', ascending=False)
-        self.is_trained = True
-        return accuracy_score(y_test, y_pred)
+    # 사용자 선택으로 입력 변수 조정
+    selected_features = st.multiselect("예측에 사용할 특성 선택", X.columns.tolist(), default=X.columns.tolist())
+    if not selected_features:
+        st.warning("적어도 하나의 특성을 선택하세요.")
+    else:
+        X = X[selected_features]
 
-    def predict(self, new_data: dict):
-        df = pd.DataFrame([new_data])
-        for col in self.feature_columns:
-            df[col] = df[col].fillna(self.data[col].median() if df[col].dtype != 'object' else self.data[col].mode()[0])
-        df_scaled = self.scaler.transform(df[self.feature_columns])
-        return self.model.predict(df_scaled), self.model.predict_proba(df_scaled)
+        # 학습
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+        model = RandomForestRegressor()
+        model.fit(X_train, y_train)
 
-    def plot_feature_importance(self):
-        return px.bar(self.feature_importance.head(10), x="importance", y="feature", orientation="h")
+        # 예측
+        predictions = model.predict(X_test)
+        mse = mean_squared_error(y_test, predictions)
+        st.success(f"✅ 모델 학습 완료 (평균제곱오차: {mse:.2f})")
 
-    def plot_data_overview(self):
-        pollution_counts = self.data['Pollution Level'].value_counts()
-        return px.bar(pollution_counts, title="Pollution Level Distribution")
+        # 새로운 값 입력
+        st.subheader("새로운 데이터로 예측하기")
+        input_data = {}
+        for col in selected_features:
+            val = st.number_input(f"{col} 값 입력", value=float(X[col].mean()))
+            input_data[col] = val
 
-# 제거 또는 주석 처리
-# if __name__ == "__main__":
-#     ...
+        input_df = pd.DataFrame([input_data])
+        result = model.predict(input_df)[0]
+        st.write(f"🌊 예측된 오염도: **{result:.2f}**")
