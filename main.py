@@ -1,63 +1,77 @@
-import streamlit as st
-from main import ShorePollutionPredictor
+# main.py
 import pandas as pd
+import numpy as np
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score, classification_report
+import plotly.express as px
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+import warnings
 
-st.title("🌊 해안 오염 예측 대시보드")
+warnings.filterwarnings("ignore")
 
-# 모델 인스턴스 생성
-predictor = ShorePollutionPredictor()
+class ShorePollutionPredictor:
+    def __init__(self):
+        self.model = RandomForestClassifier(n_estimators=100, random_state=42)
+        self.scaler = StandardScaler()
+        self.feature_columns = None
+        self.feature_importance = None
+        self.is_trained = False
+        self.data = None
 
-# 파일 업로드
-uploaded_file = st.file_uploader("CSV 데이터 업로드", type="csv")
+    def load_data(self, filepath_or_buffer):
+        self.data = pd.read_csv(filepath_or_buffer)
+        return self.data
 
-if uploaded_file:
-    data = predictor.load_data(uploaded_file)
-    if data is not None:
-        st.success("✅ 데이터 로드 완료")
-        
-        if st.button("모델 훈련"):
-            predictor.train_model()
-            st.success("✅ 모델 훈련 완료")
+    def preprocess_data(self):
+        required = ['Pollution Level']
+        for col in required:
+            if col not in self.data.columns:
+                raise ValueError(f"Missing required column: {col}")
+        potential_features = [
+            'Month', 'Season', 'Shore',
+            'Mean Number of Nematode species 1 per gram soil',
+            'Mean Number of Turbillaria per gram soil',
+            'Water pH', 'Soil pH', 'Water Salinity', 'Soil Salinity',
+            'Total dissolved solids', 'Conduction', 'ORP'
+        ]
+        self.feature_columns = [f for f in potential_features if f in self.data.columns]
+        X = self.data[self.feature_columns].copy()
+        y = self.data['Pollution Level']
+        for col in X.columns:
+            X[col] = X[col].fillna(X[col].median() if X[col].dtype != 'object' else X[col].mode()[0])
+        return X, y
 
-            # 시각화 출력
-            st.subheader("📈 데이터 개요")
-            fig1 = predictor.plot_data_overview()
-            if fig1:
-                st.plotly_chart(fig1)
+    def train_model(self, test_size=0.2):
+        X, y = self.preprocess_data()
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, stratify=y)
+        X_train = self.scaler.fit_transform(X_train)
+        X_test = self.scaler.transform(X_test)
+        self.model.fit(X_train, y_train)
+        y_pred = self.model.predict(X_test)
+        self.feature_importance = pd.DataFrame({
+            'feature': self.feature_columns,
+            'importance': self.model.feature_importances_
+        }).sort_values('importance', ascending=False)
+        self.is_trained = True
+        return accuracy_score(y_test, y_pred)
 
-            st.subheader("🎯 특성 중요도")
-            fig2 = predictor.plot_feature_importance()
-            if fig2:
-                st.plotly_chart(fig2)
+    def predict(self, new_data: dict):
+        df = pd.DataFrame([new_data])
+        for col in self.feature_columns:
+            df[col] = df[col].fillna(self.data[col].median() if df[col].dtype != 'object' else self.data[col].mode()[0])
+        df_scaled = self.scaler.transform(df[self.feature_columns])
+        return self.model.predict(df_scaled), self.model.predict_proba(df_scaled)
 
-            st.subheader("🗺️ 오염 히트맵")
-            fig3 = predictor.plot_pollution_heatmap()
-            if fig3:
-                st.plotly_chart(fig3)
+    def plot_feature_importance(self):
+        return px.bar(self.feature_importance.head(10), x="importance", y="feature", orientation="h")
 
-            st.subheader("🔗 변수 상관관계")
-            fig4 = predictor.plot_correlation_matrix()
-            if fig4:
-                st.plotly_chart(fig4)
+    def plot_data_overview(self):
+        pollution_counts = self.data['Pollution Level'].value_counts()
+        return px.bar(pollution_counts, title="Pollution Level Distribution")
 
-# 예측 섹션
-st.header("🔍 새 데이터 예측")
-sample_input = {}
-for feature in [
-    'Month', 'Season', 'Shore',
-    'Mean Number of Nematode species 1 per gram soil',
-    'Mean Number of Turbillaria per gram soil',
-    'Water pH', 'Soil pH', 'Water Salinity', 'Soil Salinity',
-    'Total dissolved solids', 'Conduction', 'ORP'
-]:
-    sample_input[feature] = st.number_input(f"{feature}", value=0.0)
-
-if st.button("예측 실행"):
-    try:
-        pred, prob = predictor.predict(sample_input)
-        if pred is not None:
-            st.success(f"예측된 오염 수준: {pred[0]}")
-            st.write("📊 예측 확률:")
-            st.write(prob[0])
-    except Exception as e:
-        st.error(f"예측 실패: {e}")
+# 제거 또는 주석 처리
+# if __name__ == "__main__":
+#     ...
