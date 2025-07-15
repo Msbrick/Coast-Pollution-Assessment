@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import os
@@ -8,7 +7,8 @@ from sklearn.metrics import mean_squared_error
 
 st.title("🌊 해양 오염 레벨 예측 프로그램")
 
-DATA_PATH = os.path.join(os.path.dirname(__file__), "coast_all", "Shore_Pollution.csv")
+# 수정된 CSV 경로
+DATA_PATH = os.path.join(os.path.dirname(__file__), "../coast_all/Shore_Pollution.csv")
 
 @st.cache_data
 def load_data():
